@@ -1,0 +1,8 @@
+Parte 1: Entiendo que deben ejecutarse tres tareas para producir eventos correspondientes a acciones de botones y una tarea consumidora para el objeto activo. Esta tarea tiene una cola asignada por donde se reciben los eventos de los botones.
+Las tareas productoras utilizan el mismo código de función pero reciben en el momento de la creación del botón al que están censando y eventos que producen.
+En la tarea consumidora (el objeto activo) se escucha la cola y al recibir un nuevo evento se procesa determinando el color del botón presionado, activando el led correspondiente de la placa, y actualizando el estado.
+Se identifica como zona crítica el estado de los leds por lo cual se protege con un mutex. 
+
+
+Parte 2: entendí que hay un túnel y dos entradas con barreras y sensores. Los autos se encolan en ambas entradas y cuando el túnel está liberado se debe dejar pasar a los autos (de a uno por vez por lo que ejemplifica el enunciado) en el orden temporal al que arribaron a cualquiera de las colas. Por este motivo considero que si bien se trata de dos colas de vehículos, el ejercicio puede modelizarse con una sola cola FIFO en el cual se agregan eventos que indique a cuál de las entradas corresponden. El túnel es la zona crítica que debe ser protegida, y esto lo hago con mutex.
+Se crean dos tareas, la productora, que constantemente sensa si hay nuevos autos en cualquiera de las entradas y los agrega a la cola; y la consumidora, que sensa nuevos autos en la cola y si el túnel está libre abre la barrera correspondiente, deja pasar al auto, cierra la barrera para que ningún otro auto avance, y repite la misma secuencia para dejar salir al auto por la entrada opuesta. 
