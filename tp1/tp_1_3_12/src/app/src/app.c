@@ -61,10 +61,10 @@
 
 /********************** external functions definition ************************/
 
-#define QUEUE_LENGTH_           (1)
+#define QUEUE_LENGTH_           (20)
 #define QUEUE_ITEM_SIZE_        (sizeof(char))
 #define MAX_THREADS_            (5)
-#define TASK_PERIOD_MS_         (1*1000)
+#define TASK_PERIOD_MS_         (2*1000)
 
 static traffic_system_t traffic_system;
 
@@ -85,6 +85,7 @@ uint16_t get_new_car_id() {
 // para vehiculos de emergencia
 //
 static void emergency_vehicle_callback_impl(car new_c) {
+
 	//
 	// abrimos la barrera este para q el auto entre
 	//
@@ -133,33 +134,37 @@ static void tunnel_subscriber_task(void *argument) {
 	car car;
 	while (true) {
 
-		if (pdPASS == xQueueReceive(traffic_system.emergency_vehicles_queue, &car, 0)) {
+		//
+		// valido que el tunel este vacio..
+		// tecnicamente como es el recurso del objeto activo y unico hilo, todo auto anterior ya se deberia
+		// haber procesado y haber salido del tunel, entonces el tunel siempre deberia estar
+		// disponible en este punto
+		//
+		if (traffic_system.cars_passing_by == 0) {
 
 			//
-			// si el tunel esta vacio..
-			// tecnicamente como es el recurso del objeto activo y ya se deberia
-			// haber procesado la salida para cualquier otro vehiculo anterior
-			// el tunel siempre deberia estar vacio
+			// si hay algun vehiculo con prioridad se lo procesa.
 			//
-			if (traffic_system.cars_passing_by == 0) {
+			if (pdPASS == xQueueReceive(traffic_system.emergency_vehicles_queue, &car, 0)) {
+
+				traffic_system.emergency_vehicle_callback(car);
+			}
+
+			//
+			// SI NO hay ningun otro vehiculo con prioridad, entonces se checkea la cola
+			// para vehiculos regulares. Caso contrario se continua (volviendo a checkear la cola con prioridad)
+			//
+			else if (pdPASS == xQueueReceive(traffic_system.both_sides_queue, &car, 0)) {
+
 				traffic_system.regular_vehicle_callback(car);
 			}
 
-		} else if (pdPASS == xQueueReceive(traffic_system.both_sides_queue, &car, 0)) {
+		} else {
 
-			//
-			// si el tunel esta vacio..
-			// tecnicamente como es el recurso del objeto activo y ya se deberia
-			// haber procesado la salida para cualquier otro vehiculo anterior
-			// el tunel siempre deberia estar vacio
-			//
-			if (traffic_system.cars_passing_by == 0) {
-				traffic_system.regular_vehicle_callback(car);
-			}
-
+			ELOG("Error: El tunel quedo ocupado");
 		}
-		vTaskDelay((TickType_t) (TASK_PERIOD_MS_ / portTICK_PERIOD_MS));
 
+		vTaskDelay((TickType_t) (TASK_PERIOD_MS_ / portTICK_PERIOD_MS));
 	}
 }
 
@@ -211,7 +216,7 @@ void task_tunnel_entry_control_regular_vehicles_producer_task(void *argument) {
 			ELOG("Llego un auto al extremo WEST");
 			ao_tunnel_queue_new_car_arrived(ACCESS_WEST, 0);
 		}
-		vTaskDelay((TickType_t) (TASK_PERIOD_MS_ / portTICK_PERIOD_MS));
+		// vTaskDelay((TickType_t) (TASK_PERIOD_MS_ / portTICK_PERIOD_MS));
 	}
 }
 
@@ -233,9 +238,13 @@ void task_tunnel_entry_control_emergency_vehicles_producer_task(void *argument) 
 			ELOG("Llego un veniculo de emergencia al extremo WEST");
 			ao_tunnel_queue_new_car_arrived(ACCESS_WEST, 1);
 		}
-		vTaskDelay((TickType_t) (TASK_PERIOD_MS_ / portTICK_PERIOD_MS));
+		// vTaskDelay((TickType_t) (TASK_PERIOD_MS_ / portTICK_PERIOD_MS));
 	}
 }
+
+//
+// ************************************************************ inicializacion *************************************************************************************
+//
 
 static bool create_subscriber_task(void) {
 
@@ -244,7 +253,8 @@ static bool create_subscriber_task(void) {
 		traffic_system.task_cnt++;
 		ELOG("Cantidad de tareas: %d", traffic_system.task_cnt);
 		BaseType_t status;
-		status = xTaskCreate(tunnel_subscriber_task, "tunnel_subscriber_task", 128, NULL, (tskIDLE_PRIORITY + 10), NULL);
+		status = xTaskCreate(tunnel_subscriber_task,
+				"tunnel_subscriber_task", 128, NULL, (tskIDLE_PRIORITY + 10), NULL);
 		while (pdPASS != status) {
 			ELOG("Error!!!");
 			// error
@@ -256,7 +266,7 @@ static bool create_subscriber_task(void) {
 	}
 }
 
-void ao_tunnel_queue_init(void) {
+void traffic_control_system_init(void) {
 	traffic_system.cars_passing_by = 0;
 	traffic_system.task_cnt = 0;
 
@@ -278,7 +288,8 @@ void ao_tunnel_queue_init(void) {
 	// por lo cual tiene mas sentido modelizar una sola cola FIFO (en lugar de dos colas) y colocar todos los autos
 	// incluyendo la informacion de a que entrada pertenecen
 	//
-	while (NULL == traffic_system.both_sides_queue) {
+	if (NULL == traffic_system.both_sides_queue || NULL == traffic_system.emergency_vehicles_queue) {
+		ELOG("Error inicializando las colas!!!");
 		// error
 	}
 
@@ -305,7 +316,7 @@ void app_init(void) {
 	// Inicializo el estado del objeto activo, su tarea (subscriber) y la cola
 	{
 		ELOG("ao init");
-		ao_tunnel_queue_init();
+		traffic_control_system_init();
 	}
 
 	// tasks
@@ -315,16 +326,20 @@ void app_init(void) {
 		ELOG("tasks init");
 
 		BaseType_t status;
-		status = xTaskCreate(task_tunnel_entry_control_regular_vehicles_producer_task, "task_uart", 128, NULL, (tskIDLE_PRIORITY + 10), NULL);
+		status = xTaskCreate(task_tunnel_entry_control_regular_vehicles_producer_task,
+				"task_tunnel_entry_control_regular_vehicles_producer_task", 128, NULL,
+				(tskIDLE_PRIORITY + 10), NULL);
 		while (pdPASS != status) {
 			// error
 		}
 		ELOG("tasks init");
-		status = xTaskCreate(task_tunnel_entry_control_emergency_vehicles_producer_task, "task_uart", 128, NULL, (tskIDLE_PRIORITY + 10), NULL);
-		while (pdPASS != status) {
-			// error
-		}
-		ELOG("tasks init");
+//		status = xTaskCreate(task_tunnel_entry_control_emergency_vehicles_producer_task,
+//				"task_tunnel_entry_control_emergency_vehicles_producer_task", 128,
+//				NULL, (tskIDLE_PRIORITY + 10), NULL);
+//		while (pdPASS != status) {
+//			// error
+//		}
+//		ELOG("tasks init");
 
 	}
 
