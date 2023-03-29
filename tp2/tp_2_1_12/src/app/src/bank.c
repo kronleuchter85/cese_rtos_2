@@ -92,7 +92,6 @@ static void client_callback_(client_t *pnew_client)
 
 static void task_(void *args)
 {
-//	client_t client;
 
 	client_set_callback(client_callback_);
 
@@ -102,10 +101,6 @@ static void task_(void *args)
 		client_t *client = pvPortMalloc(sizeof(client_t));
 
 		if (pdPASS == xQueueReceive(bank_.hclient_queue, client, portMAX_DELAY)) {
-
-//			ELOG("Llamo al cliente:");
-//			client_process(client);
-//			ELOG("Fin de la atención del cliente");
 
 			onClientAttentionHandler(client);
 
