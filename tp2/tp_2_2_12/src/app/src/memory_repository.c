@@ -20,10 +20,10 @@ void memory_repository_initialize() {
 	QMPool_init(hmp, memory_pool_memory_, MEMORY_POOL_SIZE(10, MALLOC_MAX_LEN_), MALLOC_MAX_LEN_);
 }
 
-uint8_t* memory_repository_allocate() {
-	return (uint8_t*) QMPool_get(hmp, 0);
+void* memory_repository_allocate() {
+	return QMPool_get(hmp, 0);
 }
 
-void memory_repository_release(uint8_t *pmsg) {
+void memory_repository_release(void *pmsg) {
 	QMPool_put(hmp, (void*) pmsg);
 }

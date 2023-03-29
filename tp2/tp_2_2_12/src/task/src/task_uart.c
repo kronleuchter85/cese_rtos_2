@@ -76,7 +76,7 @@ void task_uart(void *args)
 		//
 		// obtenemos un bloque de memoria del pool
 		//
-		pmsg = memory_repository_allocate();
+		pmsg = (uint8_t*) memory_repository_allocate();
 
 		if (NULL != pmsg)
 				{

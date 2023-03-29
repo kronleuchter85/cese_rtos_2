@@ -13,8 +13,8 @@
 
 void memory_repository_initialize();
 
-uint8_t* memory_repository_allocate();
+void* memory_repository_allocate();
 
-void memory_repository_release(uint8_t *pmsg);
+void memory_repository_release(void *pmsg);
 
 #endif /* APP_INC_MEMORY_REPOSITORY_H_ */
