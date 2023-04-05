@@ -43,10 +43,11 @@
 #include <stdbool.h>
 
 #include "driver.h"
-#include "client.h"
+#include "bank.h"
+#include "memory_repository.h"
 
 /********************** macros and definitions *******************************/
-
+#define MAX_THREADS_            (2)
 #define QUEUE_LENGTH_           (25)
 #define QUEUE_ITEM_SIZE_        (sizeof(client_t))
 
@@ -55,29 +56,26 @@
 static struct
 {
 	QueueHandle_t hclient_queue;
+	size_t task_cnt;
+	size_t client_cnt;
+
 } bank_;
 
 client_callback_t onClientArrivalHandler;
 client_callback_t onClientAttentionHandler;
 
-static void client_callback_(client_t *pnew_client)
+static void client_callback_(client_t *pnew_client);
+static void task_delete_(void);
+static void task_(void *args);
+static bool task_create_(void);
+
+static void task_delete_(void)
 {
-	client_t *client = (client_t*) memory_repository_allocate();
-	client->id = pnew_client->id;
-	client->age = pnew_client->age;
+	ELOG("Borro una tarea");
+	bank_.task_cnt--;
+	ELOG("Cantidad de tareas: %d", bank_.task_cnt);
 
-	if (pdPASS == xQueueSend(bank_.hclient_queue, (void* )client, 0))
-	{
-
-		onClientArrivalHandler(client);
-
-		memory_repository_release(client);
-	}
-	else
-	{
-		ELOG("Error, el cliente no tiene lugar en la fila");
-	}
-
+	vTaskDelete(NULL);
 }
 
 static void task_(void *args)
@@ -92,14 +90,78 @@ static void task_(void *args)
 
 		if (pdPASS == xQueueReceive(bank_.hclient_queue, client, portMAX_DELAY)) {
 
+			bank_.client_cnt++;
 			onClientAttentionHandler(client);
 
 			memory_repository_release(client);
-		} else {
+			bank_.client_cnt--;
+		}
 
+		else
+		{
+			task_delete_();
 		}
 
 	}
+}
+
+static bool task_create_(void)
+{
+
+	if (bank_.task_cnt < MAX_THREADS_) {
+
+		ELOG("Creo una tarea");
+		bank_.task_cnt++;
+		ELOG("Cantidad de tareas: %d", bank_.task_cnt);
+		BaseType_t status;
+		status = xTaskCreate(task_, "task_bank", 128, NULL, tskIDLE_PRIORITY + 1, NULL);
+		while (pdPASS != status)
+		{
+			ELOG("Error!!!");
+			// error
+		}
+		return true;
+	}
+	else
+	{
+		ELOG("No puedo crear nuevas tareas");
+		return false;
+	}
+}
+
+static void client_callback_(client_t *pnew_client)
+{
+	client_t *client = (client_t*) memory_repository_allocate();
+	client->id = pnew_client->id;
+	client->age = pnew_client->age;
+
+	if (pdPASS == xQueueSend(bank_.hclient_queue, (void* )client, 0))
+	{
+		onClientArrivalHandler(client);
+		if (0 == bank_.task_cnt) {
+			task_create_();
+		}
+		memory_repository_release(client);
+	}
+
+	//
+	// si cuando intenta poner el cliente en la cola no puede por falta de capacidad
+	//
+	else if (task_create_())
+	{
+		if (pdPASS == xQueueSend(bank_.hclient_queue, (void* )client, 0))
+		{
+			onClientArrivalHandler(client);
+
+			memory_repository_release(client);
+		}
+	}
+
+	else
+	{
+		ELOG("Error, el cliente no tiene lugar en la fila");
+	}
+
 }
 
 /********************** external functions definition ************************/
@@ -109,7 +171,8 @@ void bank_init(client_callback_t onArrivalHandler, client_callback_t onAttention
 
 	onClientArrivalHandler = onArrivalHandler;
 	onClientAttentionHandler = onAttentionHandler;
-
+	bank_.client_cnt = 0;
+	bank_.task_cnt = 0;
 	bank_.hclient_queue = xQueueCreate(QUEUE_LENGTH_, QUEUE_ITEM_SIZE_);
 	while (NULL == bank_.hclient_queue)
 	{

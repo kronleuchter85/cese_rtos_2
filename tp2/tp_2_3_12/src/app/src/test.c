@@ -184,10 +184,10 @@ static void case_crowd_clients_(void)
 static void task_(void *argument)
 {
 	test_start_();
-//	TRUN(case_without_clients_);
-//	TRUN(case_one_client_);
-//	TRUN(case_two_clients_);
-//	TRUN(case_25_clients_);
+	TRUN(case_without_clients_);
+	TRUN(case_one_client_);
+	TRUN(case_two_clients_);
+	TRUN(case_25_clients_);
 	TRUN(case_crowd_clients_);
 	test_ok_();
 }
