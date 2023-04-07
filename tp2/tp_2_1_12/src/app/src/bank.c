@@ -48,7 +48,7 @@
 /********************** macros and definitions *******************************/
 
 #define QUEUE_LENGTH_           (10)
-#define QUEUE_ITEM_SIZE_        (sizeof(client_t))
+#define QUEUE_ITEM_SIZE_        (sizeof(client_t*))
 
 /********************** internal data declaration ****************************/
 
@@ -76,18 +76,15 @@ static void client_callback_(client_t *pnew_client)
 	client->id = pnew_client->id;
 	client->age = pnew_client->age;
 
-	if (pdPASS == xQueueSend(bank_.hclient_queue, (void* )pnew_client, 0))
+	if (pdPASS == xQueueSend(bank_.hclient_queue, (void* )&client, 0))
 	{
-
 		onClientArrivalHandler(client);
-
 	}
 	else
 	{
 		ELOG("Error, el cliente no tiene lugar en la fila");
 	}
 
-	vPortFree(client);
 }
 
 static void task_(void *args)
@@ -95,18 +92,18 @@ static void task_(void *args)
 
 	client_set_callback(client_callback_);
 
+	client_t *client = NULL;
+
 	while (true)
 	{
 
-		client_t *client = pvPortMalloc(sizeof(client_t));
-
-		if (pdPASS == xQueueReceive(bank_.hclient_queue, client, portMAX_DELAY)) {
+		if (pdPASS == xQueueReceive(bank_.hclient_queue, &client, portMAX_DELAY)) {
 
 			onClientAttentionHandler(client);
 
+			vPortFree(client);
 		}
 
-		vPortFree(client);
 	}
 }
 
